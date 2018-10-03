@@ -14,18 +14,17 @@ import (
 func encode(password string) string {
 	pwSha512 := sha512.New()
 	pwSha512.Write([]byte(password))
-	encodedPassword := base64.StdEncoding.EncodeToString(pwSha512.Sum(nil))
-	return encodedPassword
+	return base64.StdEncoding.EncodeToString(pwSha512.Sum(nil))
 }
 
 func isPortValid(port string) bool {
 	const minPort = 1024
 	const maxPort = 9000
 
-	intPort, _ := strconv.Atoi(port)
+	intPort, err := strconv.Atoi(port)
 	var portIsValid = true
 
-	if intPort < minPort || intPort > maxPort {
+	if err != nil || intPort < minPort || intPort > maxPort {
 		portIsValid = false
 	}
 
@@ -49,16 +48,26 @@ func getSleepInterval() time.Duration {
 }
 
 func passwordHandler(writer http.ResponseWriter, request *http.Request) {
+	const passwordKey = "password"
+	const maxPasswdLen = 32
+	const validationFailureStatus = http.StatusBadRequest
+
 	time.Sleep(getSleepInterval())
 
 	if request.Method != http.MethodPost {
-		writer.WriteHeader(http.StatusBadRequest)
-		writer.Write([]byte("400 - Request method must be 'POST'"))
+		writer.WriteHeader(validationFailureStatus)
+		writer.Write([]byte("400 - Request method must be 'POST'\n"))
 	} else {
-		clearPassword := request.FormValue("password")
-		encodedPassword := encode(clearPassword)
-		encodedPassword = "\"" + encodedPassword + "\"\n"
-		writer.Write([]byte(encodedPassword))
+		if len(request.FormValue(passwordKey)) <= maxPasswdLen {
+			clearPassword := request.FormValue(passwordKey)
+			encodedPassword := encode(clearPassword)
+			encodedPassword = "\"" + encodedPassword + "\"\n"
+			writer.Write([]byte(encodedPassword))
+		} else {
+			writer.WriteHeader(validationFailureStatus)
+			passWordTooLongMsg := "400 - Password must be < " + strconv.Itoa(maxPasswdLen) + " characters\n"
+			writer.Write([]byte(passWordTooLongMsg))
+		}
 	}
 }
 
