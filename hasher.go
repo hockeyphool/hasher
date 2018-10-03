@@ -19,20 +19,12 @@ func encode(hashData hash2.Hash) string {
 }
 
 func main() {
-	fmt.Println("Hasher\n")
-	var expEncPw = "ZEHhWB65gUlzdVwtDQArEyx+KVLzp/aTaRaPlBzYRIFj6vjFdqEb0Q5B8zVKCZ0vKbZPZklJz0Fd7su2A+gf7Q=="
+	fmt.Println("Hasher")
 
 	password := "angryMonkey"
 
 	hashedPw := hash(password)
 	encPw := encode(hashedPw)
 
-	if encPw != expEncPw {
-		fmt.Println("Passwords don't match")
-	} else {
-		fmt.Println("Everything is fine")
-	}
-
-	fmt.Printf("base64 (exp):\t%s\n", expEncPw)
 	fmt.Printf("base64 (enc):\t%s\n", encPw)
 }
