@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -45,6 +46,10 @@ func getSleepInterval() time.Duration {
 	randSleep := getRandomInt()
 	randSleep = randSleep * nanosecondsPerMillisecond
 	return time.Duration(randSleep)
+}
+
+func shutdownHandler(_ http.ResponseWriter, _ *http.Request) {
+	os.Exit(0)
 }
 
 func passwordHandler(writer http.ResponseWriter, request *http.Request) {
@@ -86,5 +91,6 @@ func main() {
 	*portPtr = ":" + *portPtr
 
 	http.HandleFunc("/hash", passwordHandler)
+	http.HandleFunc("/shutdown", shutdownHandler)
 	http.ListenAndServe(*portPtr, nil)
 }

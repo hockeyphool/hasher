@@ -1,9 +1,6 @@
 package main
 
 import (
-	"net/http"
-	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -31,28 +28,28 @@ func TestInvalidPort(t *testing.T) {
 	}
 }
 
-func TestHttpEncode(t *testing.T) {
-	//var expEncPw = "ZEHhWB65gUlzdVwtDQArEyx+KVLzp/aTaRaPlBzYRIFj6vjFdqEb0Q5B8zVKCZ0vKbZPZklJz0Fd7su2A+gf7Q=="
-
-	reqUrl := "http://localhost:8080"
-	reqResource := "/hash"
-	reqData := url.Values{}
-	reqData.Set("password", "angryMonkey")
-
-	u, _ := url.ParseRequestURI(reqUrl)
-	u.Path = reqResource
-	urlStr := u.String()
-
-	client := &http.Client{}
-	r, _ := http.NewRequest("POST", urlStr, strings.NewReader(reqData.Encode()))
-
-	resp, _ := client.Do(r)
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Unexpected status: %v", resp.Status)
-	}
-
-	//if resp != expEncPw {
-	//	t.Errorf("Received encoding did not match expected;\nExpected: '%s'\nReceived: '%s'\n", expEncPw, resp)
-	//}
-}
+//func TestHttpEncode(t *testing.T) {
+//	var expEncPw = "ZEHhWB65gUlzdVwtDQArEyx+KVLzp/aTaRaPlBzYRIFj6vjFdqEb0Q5B8zVKCZ0vKbZPZklJz0Fd7su2A+gf7Q=="
+//
+//	reqUrl := "http://localhost:8080"
+//	reqResource := "/hash"
+//	reqData := url.Values{}
+//	reqData.Set("password", "angryMonkey")
+//
+//	u, _ := url.ParseRequestURI(reqUrl)
+//	u.Path = reqResource
+//	urlStr := u.String()
+//
+//	client := &http.Client{}
+//	r, _ := http.NewRequest("POST", urlStr, strings.NewReader(reqData.Encode()))
+//
+//	resp, _ := client.Do(r)
+//
+//	if resp.StatusCode != http.StatusOK {
+//		t.Errorf("Unexpected status: %v", resp.Status)
+//	}
+//
+//	if resp != expEncPw {
+//		t.Errorf("Received encoding did not match expected;\nExpected: '%s'\nReceived: '%s'\n", expEncPw, resp)
+//	}
+//}
