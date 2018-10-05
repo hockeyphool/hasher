@@ -9,8 +9,11 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 )
+
+var globalWaitGroup sync.WaitGroup
 
 func encode(password string) string {
 	pwSha512 := sha512.New()
@@ -48,32 +51,51 @@ func getSleepInterval() time.Duration {
 	return time.Duration(randSleep)
 }
 
-func shutdownHandler(_ http.ResponseWriter, _ *http.Request) {
+type handler func(writer http.ResponseWriter, request *http.Request, wgRef *sync.WaitGroup)
+
+func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h(w, r, &globalWaitGroup)
+}
+
+func shutdownHandler(writer http.ResponseWriter, _ *http.Request, wgRef *sync.WaitGroup) {
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("200 - Shutting Down"))
+	wgRef.Wait()
 	os.Exit(0)
 }
 
-func passwordHandler(writer http.ResponseWriter, request *http.Request) {
+func passwordHandler(writer http.ResponseWriter, request *http.Request, wgRef *sync.WaitGroup) {
 	const passwordKey = "password"
 	const maxPasswdLen = 32
 	const validationFailureStatus = http.StatusBadRequest
 
-	time.Sleep(getSleepInterval())
+	fmt.Println("Entering passwordHandler")
 
-	if request.Method != http.MethodPost {
-		writer.WriteHeader(validationFailureStatus)
-		writer.Write([]byte("400 - Request method must be 'POST'\n"))
-	} else {
-		if len(request.FormValue(passwordKey)) <= maxPasswdLen {
-			clearPassword := request.FormValue(passwordKey)
-			encodedPassword := encode(clearPassword)
-			encodedPassword = "\"" + encodedPassword + "\"\n"
-			writer.Write([]byte(encodedPassword))
-		} else {
+	wgRef.Add(1)
+
+	go func() {
+		defer wgRef.Done()
+
+		fmt.Println("Entering passwordHandler goroutine")
+
+		time.Sleep(getSleepInterval())
+
+		if request.Method != http.MethodPost {
 			writer.WriteHeader(validationFailureStatus)
-			passWordTooLongMsg := "400 - Password must be < " + strconv.Itoa(maxPasswdLen) + " characters\n"
-			writer.Write([]byte(passWordTooLongMsg))
+			writer.Write([]byte("400 - Request method must be 'POST'\n"))
+		} else {
+			if len(request.FormValue(passwordKey)) <= maxPasswdLen {
+				clearPassword := request.FormValue(passwordKey)
+				encodedPassword := encode(clearPassword)
+				encodedPassword = "\"" + encodedPassword + "\"\n"
+				writer.Write([]byte(encodedPassword))
+			} else {
+				writer.WriteHeader(validationFailureStatus)
+				passWordTooLongMsg := "400 - Password must be < " + strconv.Itoa(maxPasswdLen) + " characters\n"
+				writer.Write([]byte(passWordTooLongMsg))
+			}
 		}
-	}
+	}()
 }
 
 func main() {
@@ -90,7 +112,11 @@ func main() {
 
 	*portPtr = ":" + *portPtr
 
-	http.HandleFunc("/hash", passwordHandler)
-	http.HandleFunc("/shutdown", shutdownHandler)
-	http.ListenAndServe(*portPtr, nil)
+	mux := http.NewServeMux()
+	mux.Handle("/hash", handler(passwordHandler))
+	mux.Handle("/shutdown", handler(shutdownHandler))
+
+	//http.HandleFunc("/hash", passwordHandler)
+	//http.HandleFunc("/shutdown", shutdownHandler)
+	http.ListenAndServe(*portPtr, mux)
 }
