@@ -1,19 +1,22 @@
 package main
 
 import (
+	"context"
 	"crypto/sha512"
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
-	"os"
 	"strconv"
 	"sync"
 	"time"
 )
 
-var globalWaitGroup sync.WaitGroup
+var (
+	processTransactions = true
+)
 
 func encode(password string) string {
 	pwSha512 := sha512.New()
@@ -51,58 +54,79 @@ func getSleepInterval() time.Duration {
 	return time.Duration(randSleep)
 }
 
-type handler func(writer http.ResponseWriter, request *http.Request, wgRef *sync.WaitGroup)
-
-func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h(w, r, &globalWaitGroup)
+func buildShutdownHandler(hdlrWaitGroup *sync.WaitGroup, quit chan<- bool) http.Handler {
+	shutdownFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
+		processTransactions = false
+		respWriter.WriteHeader(http.StatusOK)
+		respWriter.Write([]byte("200 - Shutting down\n"))
+		hdlrWaitGroup.Wait()
+		quit <- true
+	}
+	return http.HandlerFunc(shutdownFunc)
 }
 
-func shutdownHandler(writer http.ResponseWriter, _ *http.Request, wgRef *sync.WaitGroup) {
-	writer.WriteHeader(http.StatusOK)
-	writer.Write([]byte("200 - Shutting Down"))
-	wgRef.Wait()
-	os.Exit(0)
+func buildSleepHandler(hdlrWaitGoup *sync.WaitGroup) http.Handler {
+	sleepFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
+		hdlrWaitGoup.Add(1)
+		go func() {
+			defer hdlrWaitGoup.Done()
+			respWriter.WriteHeader(http.StatusOK)
+			respWriter.Write([]byte("200 - That was refreshing"))
+			time.Sleep(1000000 * 20000)
+		}()
+	}
+	return http.HandlerFunc(sleepFunc)
 }
 
-func passwordHandler(writer http.ResponseWriter, request *http.Request, wgRef *sync.WaitGroup) {
-	const passwordKey = "password"
-	const maxPasswdLen = 32
-	const validationFailureStatus = http.StatusBadRequest
+func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
+	passwordFunc := func(respWriter http.ResponseWriter, req *http.Request) {
+		proceed := make(chan bool)
+		hdlrWaitGroup.Add(1)
+		go func() {
+			defer hdlrWaitGroup.Done()
+			var (
+				status  = http.StatusOK
+				message = ""
+			)
+			const passwordKey = "password"
+			const maxPasswordLength = 32
 
-	fmt.Println("Entering passwordHandler")
-
-	wgRef.Add(1)
-
-	go func() {
-		defer wgRef.Done()
-
-		fmt.Println("Entering passwordHandler goroutine")
-
-		time.Sleep(getSleepInterval())
-
-		if request.Method != http.MethodPost {
-			writer.WriteHeader(validationFailureStatus)
-			writer.Write([]byte("400 - Request method must be 'POST'\n"))
-		} else {
-			if len(request.FormValue(passwordKey)) <= maxPasswdLen {
-				clearPassword := request.FormValue(passwordKey)
-				encodedPassword := encode(clearPassword)
-				encodedPassword = "\"" + encodedPassword + "\"\n"
-				writer.Write([]byte(encodedPassword))
+			if processTransactions {
+				if req.Method != http.MethodPost {
+					message = "400 - Request method must be 'POST'\n"
+					status = http.StatusBadRequest
+				} else {
+					if len(req.FormValue(passwordKey)) <= maxPasswordLength {
+						time.Sleep(getSleepInterval())
+						clearPassword := req.FormValue(passwordKey)
+						message = encode(clearPassword)
+						message = "\n\"" + message + "\"\n"
+						respWriter.Header().Set("Content-Transfer-Encoding", "BASE64")
+					} else {
+						status = http.StatusBadRequest
+						message = "400 - Password must be < " + strconv.Itoa(maxPasswordLength) + " characters\n"
+					}
+				}
 			} else {
-				writer.WriteHeader(validationFailureStatus)
-				passWordTooLongMsg := "400 - Password must be < " + strconv.Itoa(maxPasswdLen) + " characters\n"
-				writer.Write([]byte(passWordTooLongMsg))
+				log.Println("Rejecting password request due to server shutdown")
+				status = http.StatusForbidden
+				message = "403 - Server is shutting down\n"
 			}
-		}
-	}()
+
+			respWriter.WriteHeader(status)
+			respWriter.Write([]byte(message))
+			proceed <- true
+		}()
+		<-proceed
+	}
+	return http.HandlerFunc(passwordFunc)
 }
 
 func main() {
 	fmt.Println("Hasher")
-	const defaultPort string = "8080"
+	const defaultPort = "8080"
 
-	portPtr := flag.String("port", defaultPort, "Listen port")
+	portPtr := flag.String("port", defaultPort, "Listen port (allowable range: \"1024\" - \"9000\"")
 	flag.Parse()
 
 	if !isPortValid(*portPtr) {
@@ -113,10 +137,42 @@ func main() {
 	*portPtr = ":" + *portPtr
 
 	mux := http.NewServeMux()
-	mux.Handle("/hash", handler(passwordHandler))
-	mux.Handle("/shutdown", handler(shutdownHandler))
+	server := &http.Server{
+		Addr:    *portPtr,
+		Handler: mux,
+	}
 
-	//http.HandleFunc("/hash", passwordHandler)
-	//http.HandleFunc("/shutdown", shutdownHandler)
-	http.ListenAndServe(*portPtr, mux)
+	var wg sync.WaitGroup
+	done := make(chan bool)
+	quit := make(chan bool, 1)
+
+	go func() {
+		<-quit
+		log.Println("Server is shutting down")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		server.SetKeepAlivesEnabled(false)
+		if err := server.Shutdown(ctx); err != nil {
+			log.Fatalf("Could not shut down gracefully: %v\n", err)
+		}
+		close(done)
+	}()
+
+	srvPassHandler := buildPasswordHandler(&wg)
+	mux.Handle("/hash", srvPassHandler)
+
+	srvShutdownHandler := buildShutdownHandler(&wg, quit)
+	mux.Handle("/shutdown", srvShutdownHandler)
+
+	srvSleepHandler := buildSleepHandler(&wg)
+	mux.Handle("/sleep", srvSleepHandler)
+
+	log.Printf("Starting server")
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
+
+	<-done
+	log.Printf("Finished")
 }
