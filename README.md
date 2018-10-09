@@ -6,9 +6,9 @@ Hasher starts a webserver listening on the specified port. The server handles th
 **"/shutdown"** - Shut down the server gracefully, ensuring that all in-flight requests are allowed to complete, but no new requests are accepted.
 
 ## USAGE
-`Usage of ./hasher:
-  -port string
-    	Listen port (allowable range: "1024" - "9000" (default "8080")`
+`Usage of ./hasher:`
+` -port string`
+`   	Listen port (allowable range: "1024" - "9000" (default "8080")`
 
 Valid 'port' values: **1024** - **9000**. The lower limit ensures that the web server can open its listening port without colliding with well-known ports (and thus requiring superuser privileges).
 
@@ -16,18 +16,18 @@ The upper limit was arbitrarily chosen for this exercise.
 
 ## BUILD AND EXECUTE
 To build and run the application:
-`$ go build
-$ ./hasher`
+`$ go build`
+`$ ./hasher`
 
 In a separate window, send requests using **'curl'**:
 `$ curl -i --data "password=testpassword" http://localhost:8080`
 
 To test sending multiple requests:
-`$ for PASSWD in testpassword1 testpassword2 testpassword3 testpassword4
-do
-  curl -i --data "password=${PASSWD}" http://localhost:8080
-  sleep 2
-done`
+`$ for PASSWD in testpassword1 testpassword2 testpassword3 testpassword4`
+`do`
+`  curl -i --data "password=${PASSWD}" http://localhost:8080`
+`  sleep 2`
+`done`
 
 To shutdown the server and exit the application, send this
 request:
