@@ -47,8 +47,9 @@ $ curl- -i http://localhost:8080/shutdown
 Combine the last two steps in separate terminal windows:
 1. Submit multiple requests
 1. Send the shutdown request before all requests are submitted
+
 Confirm the following:
 * Requests submitted **before** the shutdown receive a _200 OK_ status and a **Base64-encoded** password string
 * Requests submitted **after** the shutdown either
-** receive a _403 Forbidden_ status and the message **403 - Server is shutting down**, or
-** receive a _Connection refused_ error at the command line because the server has already shut down
+	* receive a _403 Forbidden_ status and the message **403 - Server is shutting down**, or
+	* receive a _Connection refused_ error at the command line because the server has already shut down
