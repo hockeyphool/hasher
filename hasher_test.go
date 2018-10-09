@@ -1,6 +1,10 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"sync"
 	"testing"
 	"time"
 )
@@ -64,4 +68,66 @@ func TestSleepInterval(t *testing.T) {
 	if testMaxSleep < testDuration {
 		t.Errorf("getSleepInterval() returned duration %d which is greater than maximum %d", testDuration, testMaxSleep)
 	}
+}
+
+func TestPasswordHandler(t *testing.T) {
+	var expEncPw = "\"ZEHhWB65gUlzdVwtDQArEyx+KVLzp/aTaRaPlBzYRIFj6vjFdqEb0Q5B8zVKCZ0vKbZPZklJz0Fd7su2A+gf7Q==\""
+	var passwordKey = "password"
+	var testPassword = "angryMonkey"
+
+	req, err := http.NewRequest("POST", "/hash", nil)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	form := url.Values{}
+	form.Add(passwordKey, testPassword)
+	req.PostForm = form
+
+	var wg sync.WaitGroup
+	testRecorder := httptest.NewRecorder()
+	passwordHandler := buildPasswordHandler(&wg)
+
+	passwordHandler.ServeHTTP(testRecorder, req)
+
+	if status := testRecorder.Code; status != http.StatusOK {
+		t.Errorf("Handler returned incorrect status - rcvd: %v, exp: %v\n", status, http.StatusOK)
+	}
+
+	rcvdVal := testRecorder.Body.String()
+
+	if rcvdVal != expEncPw {
+		t.Errorf("Handler did not return expected value - \n  rcvd: '%v'\n  exp:  '%v'", rcvdVal, expEncPw)
+	}
+}
+
+func TestShutdownHandler(t *testing.T) {
+	req, err := http.NewRequest("GET", "/shutdown", nil)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	testQuitChan := make(chan bool)
+
+	go func() {
+		<-testQuitChan
+		t.Log("Proceeding")
+	}()
+
+	testRecorder := httptest.NewRecorder()
+	shutdownHandler := buildShutdownHandler(&wg, testQuitChan)
+
+	shutdownHandler.ServeHTTP(testRecorder, req)
+
+	if status := testRecorder.Code; status != http.StatusOK {
+		t.Errorf("Handler returned incorrect status - rcvd: %v, exp: %v\n", status, http.StatusOK)
+	}
+
+	if processTransactions {
+		t.Errorf("Handler did not modify processTransactions correctly")
+	}
+
 }

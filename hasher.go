@@ -65,19 +65,6 @@ func buildShutdownHandler(hdlrWaitGroup *sync.WaitGroup, quit chan<- bool) http.
 	return http.HandlerFunc(shutdownFunc)
 }
 
-func buildSleepHandler(hdlrWaitGoup *sync.WaitGroup) http.Handler {
-	sleepFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
-		hdlrWaitGoup.Add(1)
-		go func() {
-			defer hdlrWaitGoup.Done()
-			respWriter.WriteHeader(http.StatusOK)
-			respWriter.Write([]byte("200 - That was refreshing"))
-			time.Sleep(1000000 * 20000)
-		}()
-	}
-	return http.HandlerFunc(sleepFunc)
-}
-
 func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 	passwordFunc := func(respWriter http.ResponseWriter, req *http.Request) {
 		proceed := make(chan bool)
@@ -92,15 +79,15 @@ func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 			const maxPasswordLength = 32
 
 			if processTransactions {
+				time.Sleep(getSleepInterval())
 				if req.Method != http.MethodPost {
 					message = "400 - Request method must be 'POST'\n"
 					status = http.StatusBadRequest
 				} else {
 					if len(req.FormValue(passwordKey)) <= maxPasswordLength {
-						time.Sleep(getSleepInterval())
 						clearPassword := req.FormValue(passwordKey)
 						message = encode(clearPassword)
-						message = "\n\"" + message + "\"\n"
+						message = "\"" + message + "\""
 						respWriter.Header().Set("Content-Transfer-Encoding", "BASE64")
 					} else {
 						status = http.StatusBadRequest
@@ -164,9 +151,6 @@ func main() {
 
 	srvShutdownHandler := buildShutdownHandler(&wg, quit)
 	mux.Handle("/shutdown", srvShutdownHandler)
-
-	srvSleepHandler := buildSleepHandler(&wg)
-	mux.Handle("/sleep", srvSleepHandler)
 
 	log.Printf("Starting server")
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
