@@ -1,3 +1,12 @@
+/*
+Hasher implements a webserver that listens on the specified port (default: 8080).
+It handles the following endpoints:
+   /hash     - Accept a form field value named "password", compute its SHA512 hash, and return the Base64-encoded string representing the hash
+   /stats    - Return a JSON object containing two fields:
+               total:   The total number of requests handled by the server since startup
+               average: The average duration of requests in microseconds
+   /shutdown - Stop accepting new requests, allow in-flight requests to complete, the shut down the server gracefully
+ */
 package main
 
 import (
@@ -159,22 +168,33 @@ func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 	return http.HandlerFunc(passwordFunc)
 }
 
-func buildStatsHandler() http.Handler {
+func buildStatsHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 	statsFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
-		var (
-			status  = http.StatusOK
-			message = []byte("")
-		)
-		if processTransactions {
-			message = marshalStats()
-			respWriter.Header().Set("Content-Type", "application/json")
+		proceed := make(chan bool)
+		hdlrWaitGroup.Add(1)
 
-		} else {
-			status = http.StatusForbidden
-			message = []byte("403 - Cannot process stats - server shutting down")
-		}
-		respWriter.WriteHeader(status)
-		respWriter.Write(message)
+		go func() {
+			var (
+				status  = http.StatusOK
+				message = []byte("")
+			)
+			defer hdlrWaitGroup.Done()
+
+			if processTransactions {
+				time.Sleep(getSleepInterval())
+				message = marshalStats()
+				respWriter.Header().Set("Content-Type", "application/json")
+
+			} else {
+				status = http.StatusForbidden
+				message = []byte("403 - Cannot process stats - server shutting down")
+			}
+			respWriter.WriteHeader(status)
+			respWriter.Write(message)
+
+			proceed <- true
+		}()
+		<-proceed
 	}
 	return http.HandlerFunc(statsFunc)
 }
@@ -228,7 +248,7 @@ func main() {
 	srvShutdownHandler := buildShutdownHandler(&wg, quit)
 	mux.Handle("/shutdown", srvShutdownHandler)
 
-	srvStatHandler := buildStatsHandler()
+	srvStatHandler := buildStatsHandler(&wg)
 	mux.Handle("/stats", srvStatHandler)
 
 	log.Printf("Starting server")
