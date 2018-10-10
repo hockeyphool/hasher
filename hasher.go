@@ -1,11 +1,11 @@
 /*
-Hasher implements a webserver that listens on the specified port (default: 8080).
-It handles the following endpoints:
-   /hash     - Accept a form field value named "password", compute its SHA512 hash, and return the Base64-encoded string representing the hash
+Hasher implements a webserver that listens on the specified port (default: 8080). It handles the following endpoints:
+   /hash     - Accept a form field value named "password", compute its SHA512 hash, and return the Base64-encoded
+               string representing the hash
    /stats    - Return a JSON object containing two fields:
                total:   The total number of requests handled by the server since startup
                average: The average duration of requests in microseconds
-   /shutdown - Stop accepting new requests, allow in-flight requests to complete, the shut down the server gracefully
+   /shutdown - Stop accepting new requests, allow in-flight requests to complete, then shut down the server gracefully
  */
 package main
 
