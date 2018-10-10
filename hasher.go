@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -14,9 +15,27 @@ import (
 	"time"
 )
 
+type serverStats struct {
+	NumEncodings    int   `json:"total"`
+	AverageDuration int64 `json:"average"`
+	mux             sync.RWMutex
+}
+
 var (
-	processTransactions = true
+	processTransactions bool
+	stats               serverStats
 )
+
+func init() {
+	processTransactions = true
+	rand.Seed(time.Now().Unix())
+	initStats()
+}
+
+func initStats() {
+	stats.NumEncodings = 0
+	stats.AverageDuration = 0
+}
 
 func encode(password string) string {
 	pwSha512 := sha512.New()
@@ -42,7 +61,6 @@ func getRandomInt() int {
 	const minimum = 5000
 	const maximum = 6000
 
-	rand.Seed(time.Now().Unix())
 	return rand.Intn(maximum-minimum) + minimum
 }
 
@@ -54,12 +72,39 @@ func getSleepInterval() time.Duration {
 	return time.Duration(randSleep)
 }
 
+func updateStats(duration time.Duration) {
+	stats.mux.Lock()
+	defer stats.mux.Unlock()
+
+	stats.NumEncodings++
+
+	durationInUSecs := int64(duration / time.Microsecond)
+
+	if stats.NumEncodings == 1 {
+		stats.AverageDuration = durationInUSecs
+	} else {
+		stats.AverageDuration = (stats.AverageDuration + durationInUSecs) / 2
+	}
+}
+
+func marshalStats() []byte {
+	stats.mux.RLock()
+	defer stats.mux.RUnlock()
+
+	jsonStats, err := json.Marshal(&stats)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return jsonStats
+}
+
 func buildShutdownHandler(hdlrWaitGroup *sync.WaitGroup, quit chan<- bool) http.Handler {
 	shutdownFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
 		processTransactions = false
 		respWriter.WriteHeader(http.StatusOK)
 		respWriter.Write([]byte("200 - Shutting down\n"))
 		hdlrWaitGroup.Wait()
+		marshalStats()
 		quit <- true
 	}
 	return http.HandlerFunc(shutdownFunc)
@@ -70,13 +115,15 @@ func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 		proceed := make(chan bool)
 		hdlrWaitGroup.Add(1)
 		go func() {
-			defer hdlrWaitGroup.Done()
 			var (
 				status  = http.StatusOK
 				message = ""
 			)
 			const passwordKey = "password"
 			const maxPasswordLength = 32
+
+			defer hdlrWaitGroup.Done()
+			startTime := time.Now()
 
 			if processTransactions {
 				time.Sleep(getSleepInterval())
@@ -95,13 +142,16 @@ func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 					}
 				}
 			} else {
-				log.Println("Rejecting password request due to server shutdown")
 				status = http.StatusForbidden
 				message = "403 - Server is shutting down\n"
 			}
 
 			respWriter.WriteHeader(status)
 			respWriter.Write([]byte(message))
+
+			endTime := time.Now()
+			updateStats(endTime.Sub(startTime))
+
 			proceed <- true
 		}()
 		<-proceed
@@ -109,9 +159,35 @@ func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 	return http.HandlerFunc(passwordFunc)
 }
 
+func buildStatsHandler() http.Handler {
+	statsFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
+		var (
+			status  = http.StatusOK
+			message = []byte("")
+		)
+		if processTransactions {
+			message = marshalStats()
+			respWriter.Header().Set("Content-Type", "application/json")
+
+		} else {
+			status = http.StatusForbidden
+			message = []byte("403 - Cannot process stats - server shutting down")
+		}
+		respWriter.WriteHeader(status)
+		respWriter.Write(message)
+	}
+	return http.HandlerFunc(statsFunc)
+}
+
 func main() {
 	fmt.Println("Hasher")
 	const defaultPort = "8080"
+
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println(err)
+		}
+	}()
 
 	portPtr := flag.String("port", defaultPort, "Listen port (allowable range: \"1024\" - \"9000\"")
 	flag.Parse()
@@ -152,11 +228,15 @@ func main() {
 	srvShutdownHandler := buildShutdownHandler(&wg, quit)
 	mux.Handle("/shutdown", srvShutdownHandler)
 
+	srvStatHandler := buildStatsHandler()
+	mux.Handle("/stats", srvStatHandler)
+
 	log.Printf("Starting server")
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 
 	<-done
+	log.Printf("serverStats: %+v", &stats)
 	log.Printf("Finished")
 }
