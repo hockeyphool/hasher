@@ -13,7 +13,7 @@ Hasher starts a webserver listening on the specified port. The server handles th
 ```
 Usage of ./hasher:
  -port string
-   	Listen port (allowable range: "1024" - "9000" (default "8080"
+   	Listen port (allowable range: "1024" - "9000" (default "8080")
 ```
 
 Valid 'port' values: **1024** - **9000**. The lower limit ensures that the web server can open its listening port without colliding with well-known ports (and thus requiring superuser privileges).
@@ -27,7 +27,39 @@ To build and run the application:
 $ go run hasher.go
 ```
 
-## TESTING
+## UNIT TESTING
+```
+$ go test -v
+=== RUN   TestEncoding
+--- PASS: TestEncoding (0.00s)
+=== RUN   TestPortValidation
+--- PASS: TestPortValidation (0.00s)
+=== RUN   TestRandomInt
+--- PASS: TestRandomInt (0.00s)
+=== RUN   TestSleepInterval
+--- PASS: TestSleepInterval (0.00s)
+=== RUN   TestInitStats
+--- PASS: TestInitStats (0.00s)
+=== RUN   TestUpdateStats
+--- PASS: TestUpdateStats (0.00s)
+=== RUN   TestMarshalStats
+--- PASS: TestMarshalStats (0.00s)
+=== RUN   TestPasswordHandlerGoodStatus
+--- PASS: TestPasswordHandlerGoodStatus (5.26s)
+=== RUN   TestPasswordHandlerBadStatus
+--- PASS: TestPasswordHandlerBadStatus (0.00s)
+=== RUN   TestShutdownHandler
+--- PASS: TestShutdownHandler (0.00s)
+=== RUN   TestStatsHandlerGoodStatus
+--- PASS: TestStatsHandlerGoodStatus (0.00s)
+=== RUN   TestStatsHandlerBadStatus
+--- PASS: TestStatsHandlerBadStatus (0.00s)
+PASS
+ok  	_/home/scottt/projects/go/hasher	5.268s
+```
+The app and unit tests pass _**golint**_ and _**go vet**_.
+
+## APPLICATION TESTING
 Once you've started the server, you can send requests in a separate window using **'curl'**:
 ```
 $ curl -i --data "password=testpassword" http://localhost:8080/hash
