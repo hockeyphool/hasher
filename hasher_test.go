@@ -250,9 +250,10 @@ func TestStatsHandlerGoodStatus(t *testing.T) {
 	updateStats(t2)
 
 	processTransactions = true
+	var wg sync.WaitGroup
 
 	testRecorder := httptest.NewRecorder()
-	statsHandler := buildStatsHandler()
+	statsHandler := buildStatsHandler(&wg)
 
 	statsHandler.ServeHTTP(testRecorder, req)
 
@@ -282,8 +283,9 @@ func TestStatsHandlerBadStatus(t *testing.T) {
 
 	processTransactions = false
 
+	var wg sync.WaitGroup
 	testRecorder := httptest.NewRecorder()
-	statsHandler := buildStatsHandler()
+	statsHandler := buildStatsHandler(&wg)
 
 	statsHandler.ServeHTTP(testRecorder, req)
 

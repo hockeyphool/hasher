@@ -108,13 +108,18 @@ func marshalStats() []byte {
 }
 
 func buildShutdownHandler(hdlrWaitGroup *sync.WaitGroup, quit chan<- bool) http.Handler {
-	shutdownFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
-		processTransactions = false
-		respWriter.WriteHeader(http.StatusOK)
-		respWriter.Write([]byte("200 - Shutting down\n"))
-		hdlrWaitGroup.Wait()
-		marshalStats()
-		quit <- true
+	shutdownFunc := func(respWriter http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			respWriter.WriteHeader(http.StatusBadRequest)
+			respWriter.Write([]byte("400 - Shutdown request method must be 'GET'\n"))
+		} else {
+			processTransactions = false
+			respWriter.WriteHeader(http.StatusOK)
+			respWriter.Write([]byte("200 - Shutting down\n"))
+			hdlrWaitGroup.Wait()
+			marshalStats()
+			quit <- true
+		}
 	}
 	return http.HandlerFunc(shutdownFunc)
 }
@@ -169,32 +174,37 @@ func buildPasswordHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
 }
 
 func buildStatsHandler(hdlrWaitGroup *sync.WaitGroup) http.Handler {
-	statsFunc := func(respWriter http.ResponseWriter, _ *http.Request) {
-		proceed := make(chan bool)
-		hdlrWaitGroup.Add(1)
+	statsFunc := func(respWriter http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			respWriter.WriteHeader(http.StatusBadRequest)
+			respWriter.Write([]byte("400 - Stats request method must be 'GET'\n"))
+		} else {
+			proceed := make(chan bool)
+			hdlrWaitGroup.Add(1)
 
-		go func() {
-			var (
-				status  = http.StatusOK
-				message = []byte("")
-			)
-			defer hdlrWaitGroup.Done()
+			go func() {
+				var (
+					status  = http.StatusOK
+					message = []byte("")
+				)
+				defer hdlrWaitGroup.Done()
 
-			if processTransactions {
-				time.Sleep(getSleepInterval())
-				message = marshalStats()
-				respWriter.Header().Set("Content-Type", "application/json")
+				if processTransactions {
+					time.Sleep(getSleepInterval())
+					message = marshalStats()
+					respWriter.Header().Set("Content-Type", "application/json")
 
-			} else {
-				status = http.StatusForbidden
-				message = []byte("403 - Cannot process stats - server shutting down")
-			}
-			respWriter.WriteHeader(status)
-			respWriter.Write(message)
+				} else {
+					status = http.StatusForbidden
+					message = []byte("403 - Cannot process stats - server shutting down")
+				}
+				respWriter.WriteHeader(status)
+				respWriter.Write(message)
 
-			proceed <- true
-		}()
-		<-proceed
+				proceed <- true
+			}()
+			<-proceed
+		}
 	}
 	return http.HandlerFunc(statsFunc)
 }
